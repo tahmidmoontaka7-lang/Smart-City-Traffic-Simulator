@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart City Traffic Control Simulator</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Manrope:wght@400;500;600&display=swap">
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: #070b14;
+  }
+  html, body { min-height: 100%; background: #070b14; color: #d7e0ef; font-family: Manrope, system-ui, sans-serif; }
+  .display { font-family: 'Chakra Petch', 'Segoe UI', sans-serif; }
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 9999px; background: #1b2640; outline: none; width: 100%; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #22d3ee; border: 3px solid #070b14; box-shadow: 0 0 0 1px #22d3ee; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #22d3ee; border: 3px solid #070b14; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+  .log::-webkit-scrollbar { width: 6px; } .log::-webkit-scrollbar-thumb { background: #1b2640; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="flex flex-col lg:flex-row min-h-screen lg:h-screen">
+
+  <!-- CONTROL PANEL -->
+  <aside class="w-full lg:w-[340px] shrink-0 bg-[#0e1523] border-b lg:border-b-0 lg:border-r border-[#1b2640] p-5 flex flex-col gap-6 lg:overflow-y-auto">
+    <header>
+      <h1 class="display text-xl font-semibold text-white leading-tight">Smart City Traffic Control</h1>
+      <p class="text-sm text-slate-400 mt-1">Four-way intersection simulator</p>
+    </header>
+
+    <section class="flex flex-col gap-4">
+      <h2 class="display text-sm font-semibold text-slate-300">Signal timing</h2>
+      <div>
+        <div class="flex justify-between text-sm mb-2">
+          <label for="greenSlider" class="text-slate-400">Green light duration</label>
+          <span id="greenValue" class="display font-semibold text-cyan-300">10 s</span>
+        </div>
+        <input id="greenSlider" type="range" min="5" max="30" step="1" value="10">
+      </div>
+      <div>
+        <div class="flex justify-between text-sm mb-2">
+          <label for="speedSlider" class="text-slate-400">Simulation speed</label>
+          <span id="speedValue" class="display font-semibold text-cyan-300">1.0×</span>
+        </div>
+        <input id="speedSlider" type="range" min="0.5" max="3" step="0.5" value="1">
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-2">
+      <h2 class="display text-sm font-semibold text-slate-300 mb-1">Events</h2>
+      <button id="btnAmbulance" class="w-full text-left rounded-lg px-4 py-3 bg-[#2a1216] border border-red-500/40 text-red-200 hover:bg-[#3a171d] transition-colors text-sm font-semibold">Spawn ambulance</button>
+      <button id="btnHeavy" class="w-full text-left rounded-lg px-4 py-3 bg-[#2a2110] border border-amber-400/40 text-amber-200 hover:bg-[#3a2d14] transition-colors text-sm font-semibold">Spawn heavy traffic</button>
+      <button id="btnSmart" aria-pressed="false" class="w-full flex items-center justify-between rounded-lg px-4 py-3 bg-[#101a2e] border border-[#26345a] hover:border-cyan-400/60 transition-colors text-sm font-semibold text-slate-200">
+        <span>Smart AI mode</span>
+        <span id="smartBadge" class="display text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">Off</span>
+      </button>
+    </section>
+
+    <section>
+      <h2 class="display text-sm font-semibold text-slate-300 mb-3">Live analytics</h2>
+      <div class="grid grid-cols-1 gap-2">
+        <div class="rounded-lg bg-[#101a2e] border border-[#1b2640] px-4 py-3 flex items-baseline justify-between">
+          <span class="text-sm text-slate-400">Average waiting time</span>
+          <span><span id="mWait" class="display text-2xl font-bold text-cyan-300">0.0</span> <span class="text-xs text-slate-500">sec</span></span>
+        </div>
+        <div class="rounded-lg bg-[#101a2e] border border-[#1b2640] px-4 py-3 flex items-baseline justify-between">
+          <span class="text-sm text-slate-400">Total vehicles passed</span>
+          <span id="mPassed" class="display text-2xl font-bold text-emerald-300">0</span>
+        </div>
+        <div class="rounded-lg bg-[#101a2e] border border-[#1b2640] px-4 py-3 flex items-baseline justify-between">
+          <span class="text-sm text-slate-400">Current queue length</span>
+          <span id="mQueue" class="display text-2xl font-bold text-amber-300">0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex-1 min-h-[120px] flex flex-col">
+      <h2 class="display text-sm font-semibold text-slate-300 mb-2">Event log</h2>
+      <ul id="eventLog" class="log flex-1 overflow-y-auto text-xs text-slate-400 flex flex-col gap-1 max-h-48 lg:max-h-none"></ul>
+    </section>
+  </aside>
+
+  <!-- SIMULATION AREA -->
+  <main class="flex-1 min-w-0 p-3 lg:p-5 flex flex-col gap-3">
+    <div class="flex items-center justify-between text-sm">
+      <div class="flex items-center gap-2 text-slate-400"><span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> Simulation running</div>
+      <div id="hudPhase" class="display text-slate-300"></div>
+    </div>
+    <div id="canvasWrap" class="relative flex-1 min-h-[360px] h-[60vh] lg:h-auto rounded-xl overflow-hidden border border-[#1b2640] bg-[#0a101c]">
+      <canvas id="simCanvas" class="absolute inset-0 w-full h-full block"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============ 1. CONFIG & SHARED STATE ============ */
+const Config = {
+  greenDuration: 10,   // seconds, controlled by slider
+  yellowDuration: 3,
+  speed: 1,            // simulation speed multiplier
+  smartMode: false,
+  colors: {
+    bg: '#0a101c', grid: 'rgba(34,211,238,0.04)', grass: '#0d1626', asphalt: '#3a404c',
+    asphaltEdge: '#2b303a', sidewalk: '#1a2233', line: '#f1f5f9', intersection: '#343a46',
+    red: '#ef4444', yellow: '#fbbf24', green: '#22c55e', off: '#1f2937'
+  }
+};
+
+/* ============ 2. TRAFFIC LIGHT ============ */
+class TrafficLight {
+  constructor(direction) {
+    this.direction = direction; // approach: 'N','S','E','W'
+    this.state = 'red';         // 'red' | 'yellow' | 'green'
+  }
+  draw(ctx, x, y, size) {
+    const w = size * 1.1, h = size * 3.1, c = Config.colors;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = '#10151f';
+    ctx.strokeStyle = '#2b3550';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, size * 0.3); ctx.fill(); ctx.stroke();
+    const lamps = [['red', c.red], ['yellow', c.yellow], ['green', c.green]];
+    lamps.forEach(([name, col], i) => {
+      const ly = -h / 2 + size * 0.55 + i * size * 1.0;
+      const on = this.state === name;
+      ctx.beginPath(); ctx.arc(0, ly, size * 0.34, 0, Math.PI * 2);
+      ctx.fillStyle = on ? col : c.off;
+      if (on) { ctx.shadowColor = col; ctx.shadowBlur = size * 1.2; }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+    ctx.restore();
+  }
+}
+
+/* ============ 3. SIGNAL CONTROLLER (fixed-time cycle, AI hook later) ============ */
+class SignalController {
+  constructor(lights) {
+    this.lights = lights;
+    this.phases = ['NS_GREEN', 'NS_YELLOW', 'ALLRED_A', 'EW_GREEN', 'EW_YELLOW', 'ALLRED_B']; // short all-red gaps let the box clear
+    this.index = 0;
+    this.timer = 0;
+    this.emergency = null;   // 'NS' | 'EW' while an ambulance has priority
+    this.emerMode = null;    // 'clear' (all red, box emptying) then 'hold' (priority axis green)
+    this.clearTimer = 0;
+    this.demand = null;
+    this.apply();
+  }
+  get phase() { return this.phases[this.index]; }
+  get phaseLength() { const p = this.phase; return p.endsWith('YELLOW') ? Config.yellowDuration : p.startsWith('ALLRED') ? 2 : Config.greenDuration; }
+  get remaining() { return Math.max(0, this.phaseLength - this.timer); }
+  setEmergency(axis) {
+    if (axis === this.emergency) return;
+    if (axis) {
+      this.emerMode = (!this.emergency && this.phase === axis + '_GREEN') ? 'hold' : 'clear';
+      this.emergency = axis; this.clearTimer = 1;   // 1 s all-red unless that axis is already green
+      this.applyEmergency();
+    } else {
+      // Resume the normal rotation: close the axis with a yellow, or skip straight to all-red if it never went green
+      const ax = this.emergency, wasGreen = this.emerMode === 'hold';
+      this.index = this.phases.indexOf(wasGreen ? ax + '_YELLOW' : (ax === 'NS' ? 'ALLRED_A' : 'ALLRED_B'));
+      this.timer = 0; this.emergency = null; this.emerMode = null;
+      this.apply();
+    }
+  }
+  applyEmergency() {
+    const g = this.emerMode === 'hold' ? 'green' : 'red', ax = this.emergency;
+    ['N', 'S'].forEach(k => this.lights[k].state = ax === 'NS' ? g : 'red');
+    ['E', 'W'].forEach(k => this.lights[k].state = ax === 'EW' ? g : 'red');
+  }
+  updateEmergency(dt) {
+    if (this.emerMode === 'clear') { this.clearTimer -= dt; if (this.clearTimer <= 0) this.emerMode = 'hold'; }
+    this.applyEmergency();
+  }
+  // Fixed-time by default. Smart AI mode ends an empty green early and extends a busy one by 50%.
+  shouldAdvance() {
+    const p = this.phase, len = this.phaseLength;
+    if (!Config.smartMode || !this.demand || !p.endsWith('GREEN')) return this.timer >= len;
+    const d = this.demand, ns = p.startsWith('NS');
+    const cur = ns ? d.N + d.S : d.E + d.W, other = ns ? d.E + d.W : d.N + d.S;
+    if (cur === 0 && other > 0 && this.timer >= 3) return true;
+    return this.timer >= (cur > other + 3 ? len * 1.5 : len);
+  }
+  update(dt) {
+    if (this.emergency) return this.updateEmergency(dt);   // emergency overrides the timer
+    this.timer += dt;
+    if (this.shouldAdvance()) {
+      this.timer = 0;
+      this.index = (this.index + 1) % this.phases.length;
+      this.apply();
+    }
+  }
+  apply() {
+    const p = this.phase;
+    const ns = p === 'NS_GREEN' ? 'green' : p === 'NS_YELLOW' ? 'yellow' : 'red';
+    const ew = p === 'EW_GREEN' ? 'green' : p === 'EW_YELLOW' ? 'yellow' : 'red';
+    this.lights.N.state = this.lights.S.state = ns;
+    this.lights.E.state = this.lights.W.state = ew;
+  }
+}
+
+/* ============ 4. INTERSECTION (geometry + static drawing) ============ */
+class Intersection {
+  constructor() {
+    this.lights = { N: new TrafficLight('N'), S: new TrafficLight('S'), E: new TrafficLight('E'), W: new TrafficLight('W') };
+    this.controller = new SignalController(this.lights);
+    this.resize(800, 600);
+  }
+  // Geometry in CSS pixels; vehicles (next step) will use these same values
+  resize(w, h) {
+    this.w = w; this.h = h;
+    this.cx = w / 2; this.cy = h / 2;
+    this.roadW = Math.max(120, Math.min(w, h) * 0.30);  // 4 lanes in total (2 per direction)
+    this.laneW = this.roadW / 4;
+    this.half = this.roadW / 2;
+  }
+  update(dt) { this.controller.update(dt); }
+
+  draw(ctx) {
+    const { w, h, cx, cy, roadW, laneW, half } = this, c = Config.colors;
+    // Background and faint grid
+    ctx.fillStyle = c.grass; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = c.grid; ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+    // Sidewalks (slightly wider than the road)
+    const sw = 12;
+    ctx.fillStyle = c.sidewalk;
+    ctx.fillRect(0, cy - half - sw, w, roadW + sw * 2);
+    ctx.fillRect(cx - half - sw, 0, roadW + sw * 2, h);
+
+    // Asphalt
+    ctx.fillStyle = c.asphalt;
+    ctx.fillRect(0, cy - half, w, roadW);
+    ctx.fillRect(cx - half, 0, roadW, h);
+    ctx.fillStyle = c.intersection;
+    ctx.fillRect(cx - half, cy - half, roadW, roadW);
+
+    this.drawMarkings(ctx);
+    this.drawCrosswalks(ctx);
+    this.drawStopLines(ctx);
+    this.drawLights(ctx);
+  }
+
+  drawMarkings(ctx) {
+    const { w, h, cx, cy, laneW, half } = this, c = Config.colors;
+    ctx.save();
+    ctx.strokeStyle = c.line; ctx.lineWidth = 2;
+    // Solid double centre lines (separate opposing directions)
+    const gap = 3;
+    const solid = (x1, y1, x2, y2, ox, oy) => {
+      [-1, 1].forEach(s => { ctx.beginPath(); ctx.moveTo(x1 + ox * s * gap, y1 + oy * s * gap); ctx.lineTo(x2 + ox * s * gap, y2 + oy * s * gap); ctx.stroke(); });
+    };
+    solid(0, cy, cx - half, cy, 0, 1);       solid(cx + half, cy, w, cy, 0, 1);
+    solid(cx, 0, cx, cy - half, 1, 0);       solid(cx, cy + half, cx, h, 1, 0);
+    // Dashed lane dividers between the two lanes of the same direction
+    ctx.setLineDash([16, 14]); ctx.globalAlpha = 0.85;
+    [-laneW, laneW].forEach(o => {
+      ctx.beginPath(); ctx.moveTo(0, cy + o); ctx.lineTo(cx - half, cy + o); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + half, cy + o); ctx.lineTo(w, cy + o); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + o, 0); ctx.lineTo(cx + o, cy - half); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + o, cy + half); ctx.lineTo(cx + o, h); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  drawCrosswalks(ctx) {
+    const { cx, cy, half, roadW } = this, stripe = 6, gap = 6, depth = 18, off = 8;
+    ctx.save(); ctx.fillStyle = 'rgba(241,245,249,0.8)';
+    for (let t = -half + 4; t < half - 4; t += stripe + gap) {
+      ctx.fillRect(cx + t, cy - half - off - depth, stripe, depth);  // north
+      ctx.fillRect(cx + t, cy + half + off, stripe, depth);          // south
+      ctx.fillRect(cx - half - off - depth, cy + t, depth, stripe);  // west
+      ctx.fillRect(cx + half + off, cy + t, depth, stripe);          // east
+    }
+    ctx.restore();
+  }
+
+  // Stop line sits only across the approaching lanes (right-hand traffic)
+  drawStopLines(ctx) {
+    const { cx, cy, half } = this, d = 8 + 18 + 8;
+    ctx.save(); ctx.strokeStyle = Config.colors.line; ctx.lineWidth = 4;
+    const line = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+    line(cx - half, cy - half - d, cx, cy - half - d);   // from north, heading south
+    line(cx, cy + half + d, cx + half, cy + half + d);   // from south, heading north
+    line(cx - half - d, cy, cx - half - d, cy + half);   // from west, heading east
+    line(cx + half + d, cy - half, cx + half + d, cy);   // from east, heading west
+    ctx.restore();
+  }
+
+  // Police outpost in the north-east corner, clear of the lanes, crosswalks and the east signal
+  drawPoliceBox(ctx, t) {
+    const bx = this.cx + this.half + 34, by = this.cy - this.half - 76, W = 30, H = 30;
+    const wave = Math.sin(t * Math.PI * 2 * 1.6);            // smooth red <-> blue alternation
+    const red = Math.max(0, wave), blue = Math.max(0, -wave);
+    ctx.save();
+    ctx.translate(bx, by);
+    // Neon glow cast on the ground
+    ctx.globalCompositeOperation = 'lighter';
+    [[-6, '239,68,68', red], [6, '59,130,246', blue]].forEach(([ox, rgb, a]) => {
+      const g = ctx.createRadialGradient(ox, -6, 2, ox, -6, 60);
+      g.addColorStop(0, 'rgba(' + rgb + ',' + (0.5 * a).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(' + rgb + ',0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ox, -6, 60, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+    // Shadow and body
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.roundRect(-W / 2 + 3, -H / 2 + 3, W, H, 5); ctx.fill();
+    ctx.fillStyle = '#16294f'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(-W / 2, -H / 2, W, H, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#1e3a8a';
+    ctx.beginPath(); ctx.roundRect(-W / 2 + 3, -H / 2 + 3, W - 6, H - 6, 3); ctx.fill();
+    // Label
+    ctx.fillStyle = '#e0ecff'; ctx.font = '700 7px "Chakra Petch", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('POLICE', 0, 8);
+    // Siren bar on the roof
+    ctx.fillStyle = '#0b1220';
+    ctx.beginPath(); ctx.roundRect(-12, -11, 24, 11, 3); ctx.fill();
+    [[-6, '#4b1d1d', '#ef4444', red], [6, '#1d2a4b', '#3b82f6', blue]].forEach(([ox, dim, bright, a]) => {
+      ctx.fillStyle = dim; ctx.beginPath(); ctx.arc(ox, -5.5, 3.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = a; ctx.fillStyle = bright; ctx.shadowColor = bright; ctx.shadowBlur = 4 + 14 * a;
+      ctx.beginPath(); ctx.arc(ox, -5.5, 3.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    });
+    ctx.restore();
+  }
+
+  drawLights(ctx) {
+    const { cx, cy, half } = this, d = 52, s = Math.max(7, this.laneW * 0.28);
+    this.lights.N.draw(ctx, cx - half - 22, cy - half - d, s);
+    this.lights.S.draw(ctx, cx + half + 22, cy + half + d, s);
+    this.lights.W.draw(ctx, cx - half - d, cy + half + 22, s);
+    this.lights.E.draw(ctx, cx + half + d, cy - half - 22, s);
+  }
+}
+
+/* ============ 5. ANALYTICS (placeholder, wired to the dashboard) ============ */
+class Analytics {
+  constructor() {
+    this.avgWait = 0; this.totalPassed = 0; this.queueLength = 0; this.waitSum = 0;
+    this.el = { wait: document.getElementById('mWait'), passed: document.getElementById('mPassed'), queue: document.getElementById('mQueue') };
+  }
+  record(wait) {
+    this.totalPassed++; this.waitSum += wait;   // called when a vehicle leaves the canvas
+  }
+  render() {
+    this.el.wait.textContent = this.avgWait.toFixed(1);
+    this.el.passed.textContent = this.totalPassed;
+    this.el.queue.textContent = this.queueLength;
+  }
+}
+
+/* ============ 6. UI CONTROLLER (sliders, buttons, log) ============ */
+class UIController {
+  constructor(sim) {
+    this.sim = sim;
+    this.log = document.getElementById('eventLog');
+    this.bind();
+    this.addLog('Simulator ready.');
+    this.sim.on('emergency', axis => this.addLog(axis
+      ? 'Emergency mode: ' + (axis === 'NS' ? 'north–south' : 'east–west') + ' cleared for ambulance.'
+      : 'Ambulance cleared, normal rotation resumed.'));
+  }
+  addLog(msg) {
+    const li = document.createElement('li');
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    li.innerHTML = '<span class="text-slate-600">' + t + '</span> ' + msg;
+    this.log.prepend(li);
+    while (this.log.children.length > 40) this.log.lastChild.remove();
+  }
+  bind() {
+    const green = document.getElementById('greenSlider'), speed = document.getElementById('speedSlider');
+    green.addEventListener('input', () => {
+      Config.greenDuration = +green.value;
+      document.getElementById('greenValue').textContent = green.value + ' s';
+    });
+    green.addEventListener('change', () => this.addLog('Green duration set to ' + green.value + ' s.'));
+    speed.addEventListener('input', () => {
+      Config.speed = +speed.value;
+      document.getElementById('speedValue').textContent = (+speed.value).toFixed(1) + '×';
+    });
+    // Event buttons only emit events for now; the vehicle system will subscribe to them in part 2
+    document.getElementById('btnAmbulance').addEventListener('click', () => { this.sim.emit('spawnAmbulance'); this.addLog('Ambulance requested.'); });
+    document.getElementById('btnHeavy').addEventListener('click', () => { this.sim.emit('spawnHeavyTraffic'); this.addLog('Heavy traffic requested.'); });
+    const smart = document.getElementById('btnSmart'), badge = document.getElementById('smartBadge');
+    smart.addEventListener('click', () => {
+      Config.smartMode = !Config.smartMode;
+      smart.setAttribute('aria-pressed', Config.smartMode);
+      badge.textContent = Config.smartMode ? 'On' : 'Off';
+      badge.className = 'display text-xs px-2 py-0.5 rounded-full ' + (Config.smartMode ? 'bg-cyan-400 text-slate-900' : 'bg-slate-700 text-slate-300');
+      smart.classList.toggle('border-cyan-400', Config.smartMode);
+      this.addLog('Smart AI mode ' + (Config.smartMode ? 'enabled.' : 'disabled.'));
+    });
+  }
+}
+
+/* ============ 6b. VEHICLE ============ */
+// Position is stored as `s`: distance travelled along the lane from the canvas edge.
+// x/y are derived from s, so vehicles stay in their lanes when the canvas is resized.
+class Vehicle {
+  constructor(type, direction, lane) {
+    const sp = Vehicle.SPECS[type];
+    this.type = type; this.direction = direction; this.lane = lane;   // lane 0 = inner, 1 = outer
+    this.len = sp.len; this.wid = sp.wid;
+    this.maxSpeed = sp.max * (type === 'car' ? 0.9 + Math.random() * 0.25 : 1);
+    this.speed = this.maxSpeed * 0.6;
+    this.state = 'moving';
+    this.s = -this.len / 2 - 1;
+    this.x = 0; this.y = 0;
+    this.wait = 0; this.crossed = false; this.justCrossed = false; this.braking = false; this.dead = false; this.distStop = 1e9;
+    this.color = type === 'car' ? (Math.random() < 0.5 ? '#38bdf8' : '#34d399') : type === 'bus' ? '#fbbf24' : '#f8fafc';
+  }
+  axisLength(ix) { return (this.direction === 'North' || this.direction === 'South') ? ix.h : ix.w; }
+  place(ix) {
+    const o = ix.laneW * (this.lane + 0.5);
+    switch (this.direction) {
+      case 'South': this.x = ix.cx - o; this.y = this.s; break;
+      case 'North': this.x = ix.cx + o; this.y = ix.h - this.s; break;
+      case 'East':  this.x = this.s; this.y = ix.cy + o; break;
+      case 'West':  this.x = ix.w - this.s; this.y = ix.cy - o; break;
+    }
+  }
+  update(dt, ix, leader, light) {
+    const V = Vehicle, stopS = this.axisLength(ix) / 2 - ix.half - 34;   // stop line, same as drawStopLines
+    let target = this.maxSpeed, room = Infinity;
+    // 1. Gap keeping: never closer than MIN_GAP to the vehicle ahead
+    if (leader) {
+      const free = (leader.s - leader.len / 2) - (this.s + this.len / 2) - V.MIN_GAP;
+      room = free;
+      target = Math.min(target, Math.sqrt(leader.speed * leader.speed + 2 * V.DECEL * Math.max(0, free)));
+    }
+    // 2. Traffic light: stop before the line unless already past it or too fast to stop safely
+    const d = stopS - (this.s + this.len / 2);
+    this.distStop = d;
+    if (!this.crossed) {
+      if (d < -0.5) { this.crossed = true; this.justCrossed = true; }
+      else if (light !== 'green' && d + 2 >= this.speed * this.speed / (2 * V.MAX_DECEL)) {
+        const dd = d - 3;
+        room = Math.min(room, dd);
+        target = Math.min(target, Math.sqrt(2 * V.DECEL * Math.max(0, dd)));
+      }
+    }
+    // 3. Smooth acceleration / braking toward the target speed
+    const before = this.speed;
+    if (this.speed < target) this.speed = Math.min(target, this.speed + V.ACCEL * dt);
+    else this.speed = Math.max(target, this.speed - V.MAX_DECEL * dt);
+    this.braking = this.speed < before - 0.01 || this.speed < 1;
+    let step = this.speed * dt;
+    if (step > room) { step = Math.max(0, room); this.speed = Math.min(this.speed, step / dt); }
+    this.s += step;
+    this.state = this.speed < 3 ? 'stopped' : 'moving';
+    if (this.state === 'stopped') this.wait += dt;   // total time spent stopped
+  }
+  draw(ctx, t) {
+    const L = this.len, W = this.wid;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(Vehicle.HEADING[this.direction]);   // drawn facing east, then rotated
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.roundRect(-L / 2 + 2, -W / 2 + 2, L, W, 4); ctx.fill();
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.roundRect(-L / 2, -W / 2, L, W, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(15,23,42,0.8)';                      // windshield
+    ctx.fillRect(L / 2 - L * 0.28, -W / 2 + 2, L * 0.14, W - 4);
+    if (this.type === 'bus') {                                 // side windows
+      for (let i = 0; i < 5; i++) { ctx.fillRect(-L / 2 + 5 + i * 9, -W / 2 + 1.5, 6, 3); ctx.fillRect(-L / 2 + 5 + i * 9, W / 2 - 4.5, 6, 3); }
+    }
+    if (this.type === 'ambulance') {
+      ctx.fillStyle = '#ef4444'; ctx.fillRect(-L / 2, -1.5, L * 0.7, 3);   // stripe
+      const on = Math.floor(t * 6) % 2 === 0;                               // blinking light bar
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = on ? '#ef4444' : '#3b82f6'; ctx.fillStyle = on ? '#ef4444' : '#3b82f6';
+      ctx.fillRect(-L * 0.1, -W / 2 + 2, 5, W - 4);
+      ctx.shadowBlur = 0;
+    }
+    ctx.fillStyle = '#fef9c3';                                 // headlights
+    ctx.fillRect(L / 2 - 2, -W / 2 + 2, 2, 3); ctx.fillRect(L / 2 - 2, W / 2 - 5, 2, 3);
+    ctx.fillStyle = this.braking ? '#ef4444' : '#7f1d1d';     // brake lights
+    ctx.fillRect(-L / 2, -W / 2 + 2, 2, 3); ctx.fillRect(-L / 2, W / 2 - 5, 2, 3);
+    ctx.restore();
+  }
+}
+Vehicle.SPECS = { car: { len: 34, wid: 18, max: 120 }, bus: { len: 64, wid: 20, max: 90 }, ambulance: { len: 42, wid: 19, max: 175 } };
+Vehicle.HEADING = { East: 0, South: Math.PI / 2, West: Math.PI, North: -Math.PI / 2 };
+Vehicle.APPROACH = { South: 'N', North: 'S', East: 'W', West: 'E' };   // travel direction -> light at its entry point
+Vehicle.AXIS = { N: 'NS', S: 'NS', E: 'EW', W: 'EW' };
+Vehicle.ACCEL = 90; Vehicle.DECEL = 160; Vehicle.MAX_DECEL = 260; Vehicle.MIN_GAP = 10;   // px, px/s^2
+
+/* ============ 6c. TRAFFIC SPAWNER (lane queues + active vehicle list) ============ */
+class TrafficSpawner {
+  constructor() {
+    this.dirs = ['North', 'South', 'East', 'West'];
+    this.vehicles = [];                       // all active vehicles (for drawing)
+    this.lanes = {};                          // lanes[dir][laneIndex] = queue ordered front -> back
+    this.dirs.forEach(d => this.lanes[d] = [[], []]);
+    this.timer = 0.2; this.heavyTime = 0; this.burst = 8; this.burstTimer = 0; this.pendingAmbulances = [];
+    this.demand = { N: 0, S: 0, E: 0, W: 0 };   // vehicles approaching or waiting at each entry
+  }
+  startHeavy() { this.heavyTime = 10; this.burst += 20; }   // 10 s of much faster spawning
+  requestAmbulance() {
+    const d = this.dirs[Math.floor(Math.random() * 4)];
+    // spawn right away; only wait if both lanes at that entrance are momentarily full
+    if (!this.spawn(d, 0, 'ambulance') && !this.spawn(d, 1, 'ambulance')) this.pendingAmbulances.push(d);
+  }
+  // Returns the axis ('NS' | 'EW') that needs emergency priority, or null if no ambulance is still before/inside the intersection
+  emergencyAxis(ix, current) {
+    let best = null, bestD = Infinity;
+    for (const v of this.vehicles) {
+      if (v.type !== 'ambulance' || v.s - v.len / 2 > v.axisLength(ix) / 2 + ix.half) continue;   // skip once its rear has left the box
+      const ax = Vehicle.AXIS[Vehicle.APPROACH[v.direction]];
+      if (ax === current) return ax;                  // keep serving the current emergency
+      if (v.distStop < bestD) { bestD = v.distStop; best = ax; }
+    }
+    return best;
+  }
+  spawn(dir, laneIdx, type) {
+    const lane = this.lanes[dir][laneIdx], last = lane[lane.length - 1];
+    if (last && last.s - last.len / 2 < 30) return false;     // no room at the entry yet
+    const v = new Vehicle(type, dir, laneIdx);
+    lane.push(v); this.vehicles.push(v);
+    return true;
+  }
+  spawnRandom() {
+    const r = Math.random(), heavy = this.heavyTime > 0;
+    const type = r < (heavy ? 0.3 : 0.15) ? 'bus' : 'car';
+    this.spawn(this.dirs[Math.floor(Math.random() * 4)], Math.random() < 0.5 ? 0 : 1, type);
+  }
+  update(dt, ix, analytics) {
+    this.heavyTime = Math.max(0, this.heavyTime - dt);
+    this.timer -= dt;
+    if (this.timer <= 0) { this.spawnRandom(); this.timer = (0.9 + Math.random() * 1.8) / (this.heavyTime > 0 ? 6 : 1); }
+    if (this.burst > 0) { this.burstTimer -= dt; if (this.burstTimer <= 0) { this.spawnRandom(); this.burst--; this.burstTimer = 0.12; } }
+    if (this.pendingAmbulances.length && this.spawn(this.pendingAmbulances[0], 0, 'ambulance')) this.pendingAmbulances.shift();
+
+    for (const dir of this.dirs) {
+      const light = ix.lights[Vehicle.APPROACH[dir]].state;
+      for (const lane of this.lanes[dir]) {
+        lane.forEach((v, i) => {
+          v.update(dt, ix, lane[i - 1], light);     // leader = vehicle directly ahead
+          v.place(ix);
+          v.justCrossed = false;
+        });
+        // Leave the canvas -> drop from the queue
+        while (lane.length && lane[0].s - lane[0].len / 2 > lane[0].axisLength(ix) + 5) {
+          const gone = lane.shift(); gone.dead = true; analytics.record(gone.wait);   // counts as passed
+        }
+      }
+    }
+    this.vehicles = this.vehicles.filter(v => !v.dead);
+    let stopped = 0, activeWait = 0;
+    const dem = { N: 0, S: 0, E: 0, W: 0 };
+    for (const v of this.vehicles) {
+      activeWait += v.wait;
+      if (v.state === 'stopped') stopped++;
+      if (!v.crossed && v.distStop < 180) dem[Vehicle.APPROACH[v.direction]]++;
+    }
+    this.demand = dem;
+    analytics.queueLength = stopped;
+    // live average: finished vehicles plus those still on the road
+    const n = analytics.totalPassed + this.vehicles.length;
+    analytics.avgWait = n ? (analytics.waitSum + activeWait) / n : 0;
+  }
+  draw(ctx, t) { this.vehicles.forEach(v => v.draw(ctx, t)); }
+}
+
+/* ============ 7. SIMULATION (canvas + animation loop) ============ */
+class Simulation {
+  constructor(canvas) {
+    this.canvas = canvas; this.ctx = canvas.getContext('2d');
+    this.wrap = canvas.parentElement;
+    this.intersection = new Intersection();
+    this.analytics = new Analytics();
+    this.listeners = {};
+    this.spawner = new TrafficSpawner();
+    this.on('spawnAmbulance', () => this.spawner.requestAmbulance());
+    this.on('spawnHeavyTraffic', () => this.spawner.startHeavy());
+    this.last = performance.now();
+    this.hud = document.getElementById('hudPhase');
+    new ResizeObserver(() => this.resize()).observe(this.wrap);
+    this.resize();
+    this.loop = this.loop.bind(this);
+    requestAnimationFrame(this.loop);
+  }
+  on(evt, fn) { (this.listeners[evt] ||= []).push(fn); }
+  emit(evt, data) { (this.listeners[evt] || []).forEach(fn => fn(data)); }
+  resize() {
+    const dpr = window.devicePixelRatio || 1, r = this.wrap.getBoundingClientRect();
+    this.canvas.width = Math.round(r.width * dpr); this.canvas.height = Math.round(r.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // draw in CSS pixels
+    this.intersection.resize(r.width, r.height);
+  }
+  update(dt) {
+    // Sub-step so high speed multipliers stay stable
+    const n = Math.max(1, Math.ceil(dt / 0.033)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const ctl = this.intersection.controller;
+      ctl.demand = this.spawner.demand;
+      const axis = this.spawner.emergencyAxis(this.intersection, ctl.emergency);
+      if (axis !== ctl.emergency) { ctl.setEmergency(axis); this.emit('emergency', axis); }
+      this.intersection.update(h);
+      this.spawner.update(h, this.intersection, this.analytics);
+    }
+  }
+  render() {
+    this.intersection.draw(this.ctx);
+    const t = performance.now() / 1000;
+    this.intersection.drawPoliceBox(this.ctx, t);
+    this.spawner.draw(this.ctx, t);
+    const c = this.intersection.controller;
+    this.hud.textContent = c.emergency
+      ? 'Emergency mode · ' + (c.emergency === 'NS' ? 'north–south' : 'east–west') + ' green'
+      : c.phase.replace('_', ' ').toLowerCase() + ' · ' + c.remaining.toFixed(0) + ' s';
+    this.hud.className = 'display ' + (c.emergency ? 'text-red-400 font-semibold' : 'text-slate-300');
+    this.wrap.classList.toggle('ring-2', !!c.emergency);
+    this.wrap.classList.toggle('ring-red-500', !!c.emergency);
+    this.analytics.render();
+  }
+  loop(now) {
+    const dt = Math.min((now - this.last) / 1000, 0.1) * Config.speed;  // clamp to survive tab switches
+    this.last = now;
+    this.update(dt);
+    this.render();
+    requestAnimationFrame(this.loop);
+  }
+}
+
+/* ============ BOOT ============ */
+const sim = new Simulation(document.getElementById('simCanvas'));
+const ui = new UIController(sim);
+</script>
+</body>
+</html>
